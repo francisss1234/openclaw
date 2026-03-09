@@ -97,7 +97,18 @@ async function main() {
     }
 
     run("pnpm", ["-s", "exec", "tsc", "-p", path.join(a2uiRendererDir, "tsconfig.json")]);
-    run("pnpm", ["-s", "exec", "rolldown", "-c", path.join(a2uiAppDir, "rolldown.config.mjs")]);
+    // Use node to directly invoke rolldown (pnpm exec fails due to missing bin link on Windows)
+    const rolldownPath = path.join(
+      rootDir,
+      "node_modules",
+      ".pnpm",
+      "rolldown@1.0.0-rc.7",
+      "node_modules",
+      "rolldown",
+      "bin",
+      "cli.mjs",
+    );
+    run("node", [rolldownPath, "-c", path.join(a2uiAppDir, "rolldown.config.mjs")]);
 
     await fs.mkdir(path.dirname(hashFile), { recursive: true });
     await fs.writeFile(hashFile, `${currentHash}\n`);

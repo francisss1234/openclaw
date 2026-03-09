@@ -1,6 +1,56 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 import { runCommandWithTimeout } from "../process/exec.js";
 import { fileExists } from "./archive.js";
+
+async function sanitizePackageJsonForNpmInstall(dir: string) {
+  const pkgPath = path.join(dir, "package.json");
+  let raw: string;
+  try {
+    raw = await fs.readFile(pkgPath, "utf8");
+  } catch {
+    return;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return;
+  }
+  if (!parsed || typeof parsed !== "object") {
+    return;
+  }
+
+  const pkg = parsed as Record<string, unknown>;
+  let changed = false;
+
+  for (const field of [
+    "dependencies",
+    "devDependencies",
+    "optionalDependencies",
+    "peerDependencies",
+  ]) {
+    const map = pkg[field];
+    if (!map || typeof map !== "object") {
+      continue;
+    }
+    for (const [name, spec] of Object.entries(map as Record<string, unknown>)) {
+      if (typeof spec === "string" && spec.trim().toLowerCase().startsWith("workspace:")) {
+        delete (map as Record<string, unknown>)[name];
+        changed = true;
+      }
+    }
+    if (Object.keys(map as Record<string, unknown>).length === 0) {
+      delete pkg[field];
+      changed = true;
+    }
+  }
+
+  if (!changed) {
+    return;
+  }
+  await fs.writeFile(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`, "utf8");
+}
 
 export async function installPackageDir(params: {
   sourceDir: string;
@@ -44,6 +94,7 @@ export async function installPackageDir(params: {
 
   if (params.hasDeps) {
     params.logger?.info?.(params.depsLogMessage);
+    await sanitizePackageJsonForNpmInstall(params.targetDir);
     const npmRes = await runCommandWithTimeout(
       ["npm", "install", "--omit=dev", "--silent", "--ignore-scripts"],
       {

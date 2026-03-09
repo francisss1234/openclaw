@@ -299,6 +299,32 @@ export type AgentCompactionConfig = {
   maxHistoryShare?: number;
   /** Pre-compaction memory flush (agentic turn). Default: enabled. */
   memoryFlush?: AgentCompactionMemoryFlushConfig;
+  summaryOffload?: AgentCompactionSummaryOffloadConfig;
+};
+
+export type AgentCompactionSummaryOffloadConfig = {
+  enabled?: boolean;
+  queue?: {
+    redisUrl?: string;
+    jobStream?: string;
+    resultStream?: string;
+    consumerGroup?: string;
+    consumerName?: string;
+    blockMs?: number;
+    claimIdleMs?: number;
+  };
+  retry?: {
+    initialDelayMs?: number;
+    maxDelayMs?: number;
+  };
+  circuitBreaker?: {
+    failureThreshold?: number;
+    pauseMs?: number;
+  };
+  pendingContext?: "last_pair" | "none";
+  summaryCharLimit?: number;
+  timeoutMs?: number;
+  logSampleRate?: number;
 };
 
 export type AgentCompactionMemoryFlushConfig = {

@@ -59,6 +59,7 @@ export function createFeishuClient(creds: FeishuClientCredentials): Lark.Client 
     appSecret,
     appType: Lark.AppType.SelfBuild,
     domain: resolveDomain(domain),
+    loggerLevel: Lark.LoggerLevel.warn,
   });
 
   // Cache it
@@ -85,7 +86,7 @@ export function createFeishuWSClient(account: ResolvedFeishuAccount): Lark.WSCli
     appId,
     appSecret,
     domain: resolveDomain(domain),
-    loggerLevel: Lark.LoggerLevel.info,
+    loggerLevel: Lark.LoggerLevel.warn,
   });
 }
 

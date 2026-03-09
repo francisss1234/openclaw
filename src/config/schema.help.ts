@@ -36,6 +36,21 @@ export const FIELD_HELP: Record<string, string> = {
     "Allow Control UI auth over insecure HTTP (token-only; not recommended).",
   "gateway.controlUi.dangerouslyDisableDeviceAuth":
     "DANGEROUS. Disable Control UI device identity checks (token/password only).",
+  "gateway.summaryService.enabled": "Start the summary service alongside the gateway.",
+  "gateway.summaryService.configPath":
+    "Optional path to summary service config (JSON). Overrides other summaryService fields.",
+  "gateway.summaryService.instances":
+    "Optional list of summary service instances (each with baseUrl/apiKey/model, etc).",
+  "gateway.summaryService.baseUrl": "OpenAI-compatible base URL for summary service.",
+  "gateway.summaryService.apiKey": "API key used by the summary service.",
+  "gateway.summaryService.model": "Model name for summary service.",
+  "gateway.summaryService.redisUrl": "Redis URL for summary service job queue.",
+  "gateway.summaryService.jobStream": "Redis stream for summary jobs.",
+  "gateway.summaryService.resultStream": "Redis stream for summary results.",
+  "gateway.summaryService.consumerGroup": "Redis consumer group for summary jobs.",
+  "gateway.summaryService.consumerName": "Redis consumer name for summary jobs.",
+  "gateway.summaryService.port": "Summary service HTTP port.",
+  "gateway.summaryService.claimIdleMs": "Idle time before reclaiming jobs (ms).",
   "gateway.http.endpoints.chatCompletions.enabled":
     "Enable the OpenAI-compatible `POST /v1/chat/completions` endpoint (default: false).",
   "gateway.reload.mode": 'Hot reload strategy for config changes ("hybrid" recommended).',

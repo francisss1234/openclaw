@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package openclaw.summary;
+
+message SummaryJob {
+  string job_id = 1;
+  string offload_id = 2;
+  string trace_id = 3;
+  int64 created_at = 4;
+  int64 deadline_ms = 5;
+  string session_file = 6;
+  string session_id = 7;
+  string history_text = 8;
+  string prefix_text = 9;
+  string previous_summary = 10;
+  string custom_instructions = 11;
+  string summary_suffix = 12;
+  bool split_turn = 13;
+}
+
+message SummaryResult {
+  string job_id = 1;
+  string offload_id = 2;
+  string trace_id = 3;
+  string status = 4;
+  string summary = 5;
+  string error = 6;
+  int64 duration_ms = 7;
+  int64 summary_len = 8;
+  double cost = 9;
+  string session_file = 10;
+}

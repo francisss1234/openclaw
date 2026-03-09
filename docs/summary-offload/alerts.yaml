@@ -1,0 +1,19 @@
+groups:
+  - name: openclaw-summary-offload
+    rules:
+      - alert: OpenClawSummaryDurationP99High
+        expr: openclaw_summary_duration_seconds{quantile="0.99"} > 0.8
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Summary p99 duration above 800ms
+          description: Summary p99 latency exceeded 0.8s for 10 minutes
+      - alert: OpenClawChatDelayP95High
+        expr: openclaw_chat_delay_seconds{reason="summary_blocking",quantile="0.95"} > 0.3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Chat delay p95 above 300ms
+          description: Chat delay p95 exceeded 0.3s for 10 minutes

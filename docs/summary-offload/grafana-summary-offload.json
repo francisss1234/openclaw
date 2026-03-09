@@ -1,0 +1,28 @@
+{
+  "title": "OpenClaw Summary Offload",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Summary Duration p99",
+      "targets": [
+        {
+          "expr": "openclaw_summary_duration_seconds{quantile=\"0.99\"}",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Chat Delay (summary_blocking)",
+      "targets": [
+        {
+          "expr": "openclaw_chat_delay_seconds{reason=\"summary_blocking\",quantile=\"0.99\"}",
+          "legendFormat": "p99"
+        }
+      ]
+    }
+  ]
+}

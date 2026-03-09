@@ -244,12 +244,8 @@ async function installPluginFromPackageDir(params: {
   }
   const targetDir = targetDirResult.path;
 
-  if (mode === "install" && (await fileExists(targetDir))) {
-    return {
-      ok: false,
-      error: `plugin already exists: ${targetDir} (delete it first)`,
-    };
-  }
+  const effectiveMode =
+    mode === "install" && (await fileExists(targetDir)) ? ("update" as const) : mode;
 
   if (dryRun) {
     return {
@@ -267,7 +263,7 @@ async function installPluginFromPackageDir(params: {
   const installRes = await installPackageDir({
     sourceDir: params.packageDir,
     targetDir,
-    mode,
+    mode: effectiveMode,
     timeoutMs,
     logger,
     copyErrorPrefix: "failed to copy plugin",

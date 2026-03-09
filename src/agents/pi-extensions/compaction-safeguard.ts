@@ -3,6 +3,7 @@ import path from "node:path";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { ExtensionAPI, FileOperations } from "@mariozechner/pi-coding-agent";
 import { extractSections } from "../../auto-reply/reply/post-compaction-context.js";
+import { observeChatDelaySeconds } from "../../infra/metrics.js";
 import {
   BASE_CHUNK_RATIO,
   MIN_CHUNK_RATIO,
@@ -15,6 +16,8 @@ import {
   summarizeInStages,
 } from "../compaction.js";
 import { collectTextContentBlocks } from "../content-blocks.js";
+import { buildSummaryOffloadJob } from "../summary-offload/manager.js";
+import { getSummaryOffloadConfig, getSummaryOffloadManager } from "../summary-offload/runtime.js";
 import { getCompactionSafeguardRuntime } from "./compaction-safeguard-runtime.js";
 const FALLBACK_SUMMARY =
   "Summary unavailable due to context limits. Older messages were truncated.";
@@ -183,6 +186,55 @@ async function readWorkspaceContextForSummary(): Promise<string> {
   }
 }
 
+function extractMessageText(message: AgentMessage): string {
+  const content = (message as { content?: unknown }).content;
+  if (typeof content === "string") {
+    return content;
+  }
+  if (Array.isArray(content)) {
+    return collectTextContentBlocks(content).join("\n");
+  }
+  return "";
+}
+
+function buildHistoryText(messages: AgentMessage[]): string {
+  const lines: string[] = [];
+  for (const message of messages) {
+    if (!message || typeof message !== "object") {
+      continue;
+    }
+    const role = (message as { role?: unknown }).role;
+    const roleLabel = typeof role === "string" && role ? role : "message";
+    const text = extractMessageText(message).trim();
+    if (!text) {
+      continue;
+    }
+    lines.push(`${roleLabel}: ${text}`);
+  }
+  return lines.join("\n");
+}
+
+function buildPendingSummary(params: {
+  messages: AgentMessage[];
+  pendingContext: "last_pair" | "none";
+  summaryCharLimit: number;
+  offloadId: string;
+}): string {
+  const token = params.offloadId ? `[summary_offload:${params.offloadId}]` : "";
+  if (params.pendingContext === "none") {
+    return token ? `摘要待生成。\n${token}` : "摘要待生成。";
+  }
+  const recent = [...params.messages].toReversed();
+  const lastUser = recent.find((msg) => (msg as { role?: string }).role === "user");
+  const lastAssistant = recent.find((msg) => (msg as { role?: string }).role === "assistant");
+  const userText = lastUser ? extractMessageText(lastUser).trim() : "";
+  const assistantText = lastAssistant ? extractMessageText(lastAssistant).trim() : "";
+  const snippet = [userText, assistantText].filter(Boolean).join("\n");
+  const limited = snippet.slice(0, params.summaryCharLimit);
+  const base = `摘要待生成。\n${limited}`.trim();
+  return token ? `${base}\n${token}` : base;
+}
+
 export default function compactionSafeguardExtension(api: ExtensionAPI): void {
   api.on("session_before_compact", async (event, ctx) => {
     const { preparation, customInstructions, signal } = event;
@@ -207,18 +259,6 @@ export default function compactionSafeguardExtension(api: ExtensionAPI): void {
       };
     }
 
-    const apiKey = await ctx.modelRegistry.getApiKey(model);
-    if (!apiKey) {
-      return {
-        compaction: {
-          summary: fallbackSummary,
-          firstKeptEntryId: preparation.firstKeptEntryId,
-          tokensBefore: preparation.tokensBefore,
-          details: { readFiles, modifiedFiles },
-        },
-      };
-    }
-
     try {
       const runtime = getCompactionSafeguardRuntime(ctx.sessionManager);
       const modelContextWindow = resolveContextWindowTokens(model);
@@ -233,7 +273,82 @@ export default function compactionSafeguardExtension(api: ExtensionAPI): void {
           ? preparation.tokensBefore
           : undefined;
 
+      const workspaceContext = await readWorkspaceContextForSummary();
+      const summarySuffix = `${toolFailureSection}${fileOpsSummary}${workspaceContext}`;
       let droppedSummary: string | undefined;
+
+      const offloadManager = getSummaryOffloadManager();
+      const offloadConfig = getSummaryOffloadConfig() ?? offloadManager?.getConfig();
+      if (offloadConfig?.enabled) {
+        const sessionFile = ctx.sessionManager.getSessionFile();
+        const allMessages = [...messagesToSummarize, ...turnPrefixMessages];
+        const pendingSummary = buildPendingSummary({
+          messages: allMessages,
+          pendingContext: offloadConfig.pendingContext ?? "last_pair",
+          summaryCharLimit: offloadConfig.summaryCharLimit ?? 400,
+          offloadId: "",
+        });
+        if (!sessionFile || !offloadManager || offloadManager.isPaused()) {
+          return {
+            compaction: {
+              summary: `${pendingSummary}${summarySuffix}`.trim(),
+              firstKeptEntryId: preparation.firstKeptEntryId,
+              tokensBefore: preparation.tokensBefore,
+              details: { readFiles, modifiedFiles },
+            },
+          };
+        }
+        const historyText = buildHistoryText(messagesToSummarize);
+        const prefixText = buildHistoryText(turnPrefixMessages);
+        const job = buildSummaryOffloadJob({
+          sessionFile,
+          sessionId: ctx.sessionManager.getSessionId(),
+          historyText,
+          prefixText: prefixText || undefined,
+          previousSummary: preparation.previousSummary,
+          customInstructions,
+          summarySuffix,
+          splitTurn: preparation.isSplitTurn,
+          timeoutMs: offloadConfig.timeoutMs ?? 5000,
+        });
+        const pending = buildPendingSummary({
+          messages: allMessages,
+          pendingContext: offloadConfig.pendingContext ?? "last_pair",
+          summaryCharLimit: offloadConfig.summaryCharLimit ?? 400,
+          offloadId: job.offloadId,
+        });
+        const enqueued = await offloadManager.enqueue(job);
+        if (enqueued) {
+          return {
+            compaction: {
+              summary: `${pending}${summarySuffix}`.trim(),
+              firstKeptEntryId: preparation.firstKeptEntryId,
+              tokensBefore: preparation.tokensBefore,
+              details: { readFiles, modifiedFiles },
+            },
+          };
+        }
+        return {
+          compaction: {
+            summary: `${pending}${summarySuffix}`.trim(),
+            firstKeptEntryId: preparation.firstKeptEntryId,
+            tokensBefore: preparation.tokensBefore,
+            details: { readFiles, modifiedFiles },
+          },
+        };
+      }
+
+      const apiKey = await ctx.modelRegistry.getApiKey(model);
+      if (!apiKey) {
+        return {
+          compaction: {
+            summary: fallbackSummary,
+            firstKeptEntryId: preparation.firstKeptEntryId,
+            tokensBefore: preparation.tokensBefore,
+            details: { readFiles, modifiedFiles },
+          },
+        };
+      }
 
       if (tokensBefore !== undefined) {
         const summarizableTokens =
@@ -303,6 +418,7 @@ export default function compactionSafeguardExtension(api: ExtensionAPI): void {
       // incorporates context from pruned messages instead of losing it entirely.
       const effectivePreviousSummary = droppedSummary ?? preparation.previousSummary;
 
+      const blockStart = Date.now();
       const historySummary = await summarizeInStages({
         messages: messagesToSummarize,
         model,
@@ -331,14 +447,11 @@ export default function compactionSafeguardExtension(api: ExtensionAPI): void {
         summary = `${historySummary}\n\n---\n\n**Turn Context (split turn):**\n\n${prefixSummary}`;
       }
 
-      summary += toolFailureSection;
-      summary += fileOpsSummary;
-
-      // Append workspace critical context (Session Startup + Red Lines from AGENTS.md)
-      const workspaceContext = await readWorkspaceContextForSummary();
-      if (workspaceContext) {
-        summary += workspaceContext;
-      }
+      summary += summarySuffix;
+      observeChatDelaySeconds({
+        reason: "summary_blocking",
+        value: (Date.now() - blockStart) / 1000,
+      });
 
       return {
         compaction: {

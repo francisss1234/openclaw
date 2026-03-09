@@ -17,6 +17,7 @@ export async function probeFeishu(creds?: FeishuClientCredentials): Promise<Feis
       method: "GET",
       url: "/open-apis/bot/v3/info",
       data: {},
+      timeout: 5000,
     });
 
     if (response.code !== 0) {

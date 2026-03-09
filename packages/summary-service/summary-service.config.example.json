@@ -1,0 +1,21 @@
+{
+  "instances": [
+    {
+      "base_url": "https://integrate.api.nvidia.com/v1",
+      "api_key": "REPLACE_WITH_API_KEY_1",
+      "model": "z-ai/glm5"
+    },
+    {
+      "base_url": "https://integrate.api.nvidia.com/v1",
+      "api_key": "REPLACE_WITH_API_KEY_2",
+      "model": "z-ai/glm5"
+    }
+  ],
+  "redis_url": "redis://127.0.0.1:6379",
+  "job_stream": "openclaw:summary:jobs",
+  "result_stream": "openclaw:summary:results",
+  "consumer_group": "openclaw-summary-jobs",
+  "consumer_name": "summary-local",
+  "port": 9921,
+  "claim_idle_ms": 60000
+}

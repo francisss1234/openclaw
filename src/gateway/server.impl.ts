@@ -3,6 +3,11 @@ import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../agents/agent
 import { getActiveEmbeddedRunCount } from "../agents/pi-embedded-runner/runs.js";
 import { registerSkillsChangeListener } from "../agents/skills/refresh.js";
 import { initSubagentRegistry } from "../agents/subagent-registry.js";
+import {
+  resolveSummaryOffloadConfig,
+  startSummaryOffloadManager,
+} from "../agents/summary-offload/manager.js";
+import { setSummaryOffloadRuntime } from "../agents/summary-offload/runtime.js";
 import { getTotalPendingReplies } from "../auto-reply/reply/dispatcher-registry.js";
 import type { CanvasHostServer } from "../canvas-host/server.js";
 import { type ChannelId, listChannelPlugins } from "../channels/plugins/index.js";
@@ -352,6 +357,12 @@ export async function startGatewayServer(
   const { wizardSessions, findRunningWizard, purgeWizardSession } = createWizardSessionTracker();
 
   const deps = createDefaultDeps();
+  const summaryOffloadConfig = resolveSummaryOffloadConfig(cfgAtStart);
+  setSummaryOffloadRuntime(null, summaryOffloadConfig);
+  const summaryOffloadManager = await startSummaryOffloadManager({ cfg: cfgAtStart });
+  if (summaryOffloadManager) {
+    setSummaryOffloadRuntime(summaryOffloadManager, summaryOffloadManager.getConfig());
+  }
   let canvasHostServer: CanvasHostServer | null = null;
   const gatewayTls = await loadGatewayTlsRuntime(cfgAtStart.gateway?.tls, log.child("tls"));
   if (cfgAtStart.gateway?.tls?.enabled && !gatewayTls.enabled) {
@@ -764,6 +775,7 @@ export async function startGatewayServer(
       skillsChangeUnsub();
       authRateLimiter?.dispose();
       channelHealthMonitor?.stop();
+      await summaryOffloadManager?.stop();
       await close(opts);
     },
   };

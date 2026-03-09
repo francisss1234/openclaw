@@ -34,6 +34,21 @@ const NodeHostSchema = z
   .strict()
   .optional();
 
+const GatewaySummaryServiceInstanceSchema = z
+  .object({
+    baseUrl: z.string().optional(),
+    apiKey: z.string().optional().register(sensitive),
+    model: z.string().optional(),
+    redisUrl: z.string().optional(),
+    jobStream: z.string().optional(),
+    resultStream: z.string().optional(),
+    consumerGroup: z.string().optional(),
+    consumerName: z.string().optional(),
+    port: z.number().int().positive().optional(),
+    claimIdleMs: z.number().int().nonnegative().optional(),
+  })
+  .strict();
+
 const MemoryQmdPathSchema = z
   .object({
     path: z.string(),
@@ -454,6 +469,24 @@ export const OpenClawSchema = z
           .object({
             deny: z.array(z.string()).optional(),
             allow: z.array(z.string()).optional(),
+          })
+          .strict()
+          .optional(),
+        summaryService: z
+          .object({
+            enabled: z.boolean().optional(),
+            configPath: z.string().optional(),
+            instances: z.array(GatewaySummaryServiceInstanceSchema).optional(),
+            baseUrl: z.string().optional(),
+            apiKey: z.string().optional().register(sensitive),
+            model: z.string().optional(),
+            redisUrl: z.string().optional(),
+            jobStream: z.string().optional(),
+            resultStream: z.string().optional(),
+            consumerGroup: z.string().optional(),
+            consumerName: z.string().optional(),
+            port: z.number().int().positive().optional(),
+            claimIdleMs: z.number().int().nonnegative().optional(),
           })
           .strict()
           .optional(),

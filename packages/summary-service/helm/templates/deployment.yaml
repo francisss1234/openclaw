@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openclaw-summary-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openclaw-summary-service
+  template:
+    metadata:
+      labels:
+        app: openclaw-summary-service
+    spec:
+      containers:
+        - name: summary-service
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: "{{ .Values.image.pullPolicy }}"
+          env:
+            - name: SUMMARY_REDIS_URL
+              value: "{{ .Values.env.SUMMARY_REDIS_URL }}"
+            - name: SUMMARY_JOB_STREAM
+              value: "{{ .Values.env.SUMMARY_JOB_STREAM }}"
+            - name: SUMMARY_RESULT_STREAM
+              value: "{{ .Values.env.SUMMARY_RESULT_STREAM }}"
+            - name: SUMMARY_CONSUMER_GROUP
+              value: "{{ .Values.env.SUMMARY_CONSUMER_GROUP }}"
+            - name: SUMMARY_BASE_URL
+              value: "{{ .Values.env.SUMMARY_BASE_URL }}"
+            - name: SUMMARY_MODEL
+              value: "{{ .Values.env.SUMMARY_MODEL }}"
+            - name: SUMMARY_PORT
+              value: "{{ .Values.env.SUMMARY_PORT }}"
+            - name: SUMMARY_CLAIM_IDLE_MS
+              value: "{{ .Values.env.SUMMARY_CLAIM_IDLE_MS }}"
+          ports:
+            - containerPort: "{{ .Values.service.port }}"

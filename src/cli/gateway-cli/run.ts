@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import type { Command } from "commander";
@@ -50,6 +51,8 @@ type GatewayRunOpts = {
   rawStreamPath?: unknown;
   dev?: boolean;
   reset?: boolean;
+  summaryService?: boolean;
+  summaryServiceConfig?: unknown;
 };
 
 const gatewayLog = createSubsystemLogger("gateway");
@@ -63,6 +66,7 @@ const GATEWAY_RUN_VALUE_KEYS = [
   "tailscale",
   "wsLog",
   "rawStreamPath",
+  "summaryServiceConfig",
 ] as const;
 
 const GATEWAY_RUN_BOOLEAN_KEYS = [
@@ -75,7 +79,110 @@ const GATEWAY_RUN_BOOLEAN_KEYS = [
   "claudeCliLogs",
   "compact",
   "rawStream",
+  "summaryService",
 ] as const;
+
+type SummaryServiceConfig = {
+  baseUrl?: string;
+  apiKey?: string;
+  model?: string;
+  redisUrl?: string;
+  jobStream?: string;
+  resultStream?: string;
+  consumerGroup?: string;
+  consumerName?: string;
+  port?: number;
+  claimIdleMs?: number;
+};
+
+function resolvePnpmCommand(): { command: string; args: string[] } {
+  const npmExecPath = process.env.npm_execpath?.trim();
+  if (npmExecPath) {
+    return { command: process.execPath, args: [npmExecPath] };
+  }
+  if (process.platform === "win32") {
+    return { command: "pnpm.cmd", args: [] };
+  }
+  return { command: "pnpm", args: [] };
+}
+
+function normalizeSummaryServiceConfig(raw: unknown): SummaryServiceConfig {
+  if (!raw || typeof raw !== "object") {
+    return {};
+  }
+  const record = raw as Record<string, unknown>;
+  const stringOr = (camel: string, snake: string) => {
+    const camelVal = record[camel];
+    if (typeof camelVal === "string") {
+      return camelVal;
+    }
+    const snakeVal = record[snake];
+    if (typeof snakeVal === "string") {
+      return snakeVal;
+    }
+    return undefined;
+  };
+  const numberOr = (camel: string, snake: string) => {
+    const camelVal = record[camel];
+    if (typeof camelVal === "number" && Number.isFinite(camelVal)) {
+      return camelVal;
+    }
+    const snakeVal = record[snake];
+    if (typeof snakeVal === "number" && Number.isFinite(snakeVal)) {
+      return snakeVal;
+    }
+    return undefined;
+  };
+  return {
+    baseUrl: stringOr("baseUrl", "base_url"),
+    apiKey: stringOr("apiKey", "api_key"),
+    model: stringOr("model", "model"),
+    redisUrl: stringOr("redisUrl", "redis_url"),
+    jobStream: stringOr("jobStream", "job_stream"),
+    resultStream: stringOr("resultStream", "result_stream"),
+    consumerGroup: stringOr("consumerGroup", "consumer_group"),
+    consumerName: stringOr("consumerName", "consumer_name"),
+    port: numberOr("port", "port"),
+    claimIdleMs: numberOr("claimIdleMs", "claim_idle_ms"),
+  };
+}
+
+function normalizeSummaryServiceConfigList(raw: unknown): SummaryServiceConfig[] {
+  if (Array.isArray(raw)) {
+    return raw.map((entry) => normalizeSummaryServiceConfig(entry));
+  }
+  if (!raw || typeof raw !== "object") {
+    return [];
+  }
+  const record = raw as Record<string, unknown>;
+  if (Array.isArray(record.instances)) {
+    return record.instances.map((entry) => normalizeSummaryServiceConfig(entry));
+  }
+  return [normalizeSummaryServiceConfig(raw)];
+}
+
+function loadSummaryServiceConfig(configPath: string): SummaryServiceConfig[] {
+  const raw = fs.readFileSync(configPath, "utf-8");
+  return normalizeSummaryServiceConfigList(JSON.parse(raw));
+}
+
+function buildSummaryServiceEnv(config: SummaryServiceConfig): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    SUMMARY_BASE_URL: config.baseUrl ?? process.env.SUMMARY_BASE_URL,
+    SUMMARY_API_KEY: config.apiKey ?? process.env.SUMMARY_API_KEY,
+    SUMMARY_MODEL: config.model ?? process.env.SUMMARY_MODEL,
+    SUMMARY_REDIS_URL: config.redisUrl ?? process.env.SUMMARY_REDIS_URL,
+    SUMMARY_JOB_STREAM: config.jobStream ?? process.env.SUMMARY_JOB_STREAM,
+    SUMMARY_RESULT_STREAM: config.resultStream ?? process.env.SUMMARY_RESULT_STREAM,
+    SUMMARY_CONSUMER_GROUP: config.consumerGroup ?? process.env.SUMMARY_CONSUMER_GROUP,
+    SUMMARY_CONSUMER_NAME: config.consumerName ?? process.env.SUMMARY_CONSUMER_NAME,
+    SUMMARY_PORT: config.port ? String(config.port) : process.env.SUMMARY_PORT,
+    SUMMARY_CLAIM_IDLE_MS: config.claimIdleMs
+      ? String(config.claimIdleMs)
+      : process.env.SUMMARY_CLAIM_IDLE_MS,
+  };
+}
 
 function resolveGatewayRunOptions(opts: GatewayRunOpts, command?: Command): GatewayRunOpts {
   const resolved: GatewayRunOpts = { ...opts };
@@ -314,6 +421,60 @@ async function runGatewayCommand(opts: GatewayRunOpts) {
         }
       : undefined;
 
+  const summaryServiceConfigFromGateway = cfg.gateway?.summaryService;
+  const summaryServiceEnabled =
+    Boolean(opts.summaryService) ||
+    process.env.OPENCLAW_SUMMARY_SERVICE_START === "1" ||
+    summaryServiceConfigFromGateway?.enabled === true;
+  const summaryChildren: Array<ReturnType<typeof spawn>> = [];
+  if (summaryServiceEnabled) {
+    const explicitConfigPath =
+      toOptionString(opts.summaryServiceConfig) ??
+      process.env.OPENCLAW_SUMMARY_SERVICE_CONFIG ??
+      summaryServiceConfigFromGateway?.configPath;
+    if (explicitConfigPath && !fs.existsSync(explicitConfigPath)) {
+      defaultRuntime.error(`Missing summary service config: ${explicitConfigPath}`);
+      defaultRuntime.exit(1);
+      return;
+    }
+    const configs = explicitConfigPath
+      ? loadSummaryServiceConfig(explicitConfigPath)
+      : normalizeSummaryServiceConfigList(summaryServiceConfigFromGateway);
+    if (configs.length === 0) {
+      defaultRuntime.error("Summary service config requires at least one instance");
+      defaultRuntime.exit(1);
+      return;
+    }
+    const pnpmCommand = resolvePnpmCommand();
+    configs.forEach((config, index) => {
+      const env = buildSummaryServiceEnv(config);
+      if (!env.SUMMARY_BASE_URL || !env.SUMMARY_API_KEY || !env.SUMMARY_MODEL) {
+        defaultRuntime.error(`Summary service config ${index + 1} requires baseUrl/apiKey/model`);
+        defaultRuntime.exit(1);
+        return;
+      }
+      const child = spawn(
+        pnpmCommand.command,
+        [...pnpmCommand.args, "--filter", "@openclaw/summary-service", "start"],
+        {
+          cwd: process.cwd(),
+          env,
+          stdio: "inherit",
+          windowsHide: true,
+        },
+      );
+      child.on("exit", (code, signal) => {
+        if (code === 0 || signal === "SIGTERM") {
+          return;
+        }
+        gatewayLog.warn(
+          `summary service exited (instance=${index + 1} code=${String(code)} signal=${String(signal)})`,
+        );
+      });
+      summaryChildren.push(child);
+    });
+  }
+
   try {
     await runGatewayLoop({
       runtime: defaultRuntime,
@@ -349,6 +510,20 @@ async function runGatewayCommand(opts: GatewayRunOpts) {
     }
     defaultRuntime.error(`Gateway failed to start: ${String(err)}`);
     defaultRuntime.exit(1);
+  } finally {
+    for (const child of summaryChildren) {
+      if (!child.killed) {
+        child.kill("SIGTERM");
+      }
+    }
+    if (summaryChildren.length > 0) {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      for (const child of summaryChildren) {
+        if (!child.killed) {
+          child.kill("SIGKILL");
+        }
+      }
+    }
   }
 }
 
@@ -393,6 +568,11 @@ export function addGatewayRunCommand(cmd: Command): Command {
     .option("--compact", 'Alias for "--ws-log compact"', false)
     .option("--raw-stream", "Log raw model stream events to jsonl", false)
     .option("--raw-stream-path <path>", "Raw stream jsonl path")
+    .option("--summary-service", "Start the summary service alongside the gateway", false)
+    .option(
+      "--summary-service-config <path>",
+      "Summary service config path (default: .local/summary-service.config.json)",
+    )
     .action(async (opts, command) => {
       await runGatewayCommand(resolveGatewayRunOptions(opts, command));
     });

@@ -1,0 +1,31 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": [
+    "jobId",
+    "offloadId",
+    "traceId",
+    "createdAt",
+    "deadlineMs",
+    "sessionFile",
+    "historyText",
+    "summarySuffix",
+    "splitTurn"
+  ],
+  "properties": {
+    "jobId": { "type": "string" },
+    "offloadId": { "type": "string" },
+    "traceId": { "type": "string" },
+    "createdAt": { "type": "number" },
+    "deadlineMs": { "type": "number" },
+    "sessionFile": { "type": "string" },
+    "sessionId": { "type": "string" },
+    "historyText": { "type": "string" },
+    "prefixText": { "type": "string" },
+    "previousSummary": { "type": "string" },
+    "customInstructions": { "type": "string" },
+    "summarySuffix": { "type": "string" },
+    "splitTurn": { "type": "boolean" }
+  },
+  "additionalProperties": false
+}

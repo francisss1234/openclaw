@@ -29,6 +29,36 @@ function resolveCommand(command: string): string {
   return command;
 }
 
+function quoteCmdArg(value: string): string {
+  if (!value) {
+    return '""';
+  }
+  const escaped = value.replace(/"/g, '\\"').replace(/%/g, "%%").replace(/!/g, "^!");
+  if (!/[ \t"&|<>^()%!]/g.test(value)) {
+    return escaped;
+  }
+  return `"${escaped}"`;
+}
+
+function resolveWindowsCmdShimExec(params: {
+  resolvedCommand: string;
+  args: string[];
+}): { command: string; args: string[]; windowsVerbatimArguments: boolean } | null {
+  if (process.platform !== "win32") {
+    return null;
+  }
+  const ext = path.extname(params.resolvedCommand).toLowerCase();
+  if (ext !== ".cmd" && ext !== ".bat") {
+    return null;
+  }
+  const cmdline = [quoteCmdArg(params.resolvedCommand), ...params.args.map(quoteCmdArg)].join(" ");
+  return {
+    command: "cmd.exe",
+    args: ["/d", "/s", "/c", cmdline],
+    windowsVerbatimArguments: true,
+  };
+}
+
 export function shouldSpawnWithShell(params: {
   resolvedCommand: string;
   platform: NodeJS.Platform;
@@ -57,7 +87,16 @@ export async function runExec(
           encoding: "utf8" as const,
         };
   try {
-    const { stdout, stderr } = await execFileAsync(resolveCommand(command), args, options);
+    const resolvedCommand = resolveCommand(command);
+    const windowsShim = resolveWindowsCmdShimExec({ resolvedCommand, args });
+    const { stdout, stderr } = await execFileAsync(
+      windowsShim?.command ?? resolvedCommand,
+      windowsShim?.args ?? args,
+      {
+        ...options,
+        ...(windowsShim ? { windowsVerbatimArguments: windowsShim.windowsVerbatimArguments } : {}),
+      },
+    );
     if (shouldLogVerbose()) {
       if (stdout.trim()) {
         logDebug(stdout.trim());
@@ -134,11 +173,12 @@ export async function runCommandWithTimeout(
 
   const stdio = resolveCommandStdio({ hasInput, preferInherit: true });
   const resolvedCommand = resolveCommand(argv[0] ?? "");
-  const child = spawn(resolvedCommand, argv.slice(1), {
+  const windowsShim = resolveWindowsCmdShimExec({ resolvedCommand, args: argv.slice(1) });
+  const child = spawn(windowsShim?.command ?? resolvedCommand, windowsShim?.args ?? argv.slice(1), {
     stdio,
     cwd,
     env: resolvedEnv,
-    windowsVerbatimArguments,
+    windowsVerbatimArguments: windowsShim?.windowsVerbatimArguments ?? windowsVerbatimArguments,
     ...(shouldSpawnWithShell({ resolvedCommand, platform: process.platform })
       ? { shell: true }
       : {}),

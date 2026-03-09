@@ -30,7 +30,65 @@ export function parseLsofOutput(output: string): PortProcess[] {
   return results;
 }
 
+function listPortListenersWindows(port: number): PortProcess[] {
+  const pids: number[] = [];
+  try {
+    const out = execFileSync(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-Command",
+        [
+          `$port=${port};`,
+          "Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue |",
+          "Select-Object -ExpandProperty OwningProcess |",
+          "Sort-Object -Unique",
+        ].join(" "),
+      ],
+      { encoding: "utf-8" },
+    );
+    for (const line of String(out).split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        continue;
+      }
+      const pid = Number.parseInt(trimmed, 10);
+      if (Number.isFinite(pid)) {
+        pids.push(pid);
+      }
+    }
+  } catch {
+    const res = execFileSync("netstat.exe", ["-ano", "-p", "tcp"], { encoding: "utf-8" });
+    const portToken = `:${port}`;
+    for (const line of String(res).split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        continue;
+      }
+      if (!trimmed.includes(portToken)) {
+        continue;
+      }
+      if (!/\blisten(?:ing)?\b/i.test(trimmed)) {
+        continue;
+      }
+      const parts = trimmed.split(/\s+/);
+      const pidRaw = parts.at(-1);
+      if (!pidRaw) {
+        continue;
+      }
+      const pid = Number.parseInt(pidRaw, 10);
+      if (Number.isFinite(pid)) {
+        pids.push(pid);
+      }
+    }
+  }
+  return [...new Set(pids)].map((pid) => ({ pid }));
+}
+
 export function listPortListeners(port: number): PortProcess[] {
+  if (process.platform === "win32") {
+    return listPortListenersWindows(port);
+  }
   try {
     const lsof = resolveLsofCommandSync();
     const out = execFileSync(lsof, ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-FpFc"], {

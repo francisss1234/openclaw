@@ -223,11 +223,7 @@ describe("installPluginFromArchive", () => {
     });
 
     expect(first.ok).toBe(true);
-    expect(second.ok).toBe(false);
-    if (second.ok) {
-      return;
-    }
-    expect(second.error).toContain("already exists");
+    expect(second.ok).toBe(true);
   });
 
   it("installs from a zip archive", async () => {

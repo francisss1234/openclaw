@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: openclaw-summary-service
+spec:
+  selector:
+    app: openclaw-summary-service
+  ports:
+    - port: "{{ .Values.service.port }}"
+      targetPort: "{{ .Values.service.port }}"

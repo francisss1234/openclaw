@@ -104,6 +104,42 @@ export const AgentDefaultsSchema = z
           })
           .strict()
           .optional(),
+        summaryOffload: z
+          .object({
+            enabled: z.boolean().optional(),
+            queue: z
+              .object({
+                redisUrl: z.string().optional(),
+                jobStream: z.string().optional(),
+                resultStream: z.string().optional(),
+                consumerGroup: z.string().optional(),
+                consumerName: z.string().optional(),
+                blockMs: z.number().int().nonnegative().optional(),
+                claimIdleMs: z.number().int().nonnegative().optional(),
+              })
+              .strict()
+              .optional(),
+            retry: z
+              .object({
+                initialDelayMs: z.number().int().nonnegative().optional(),
+                maxDelayMs: z.number().int().nonnegative().optional(),
+              })
+              .strict()
+              .optional(),
+            circuitBreaker: z
+              .object({
+                failureThreshold: z.number().int().positive().optional(),
+                pauseMs: z.number().int().positive().optional(),
+              })
+              .strict()
+              .optional(),
+            pendingContext: z.union([z.literal("last_pair"), z.literal("none")]).optional(),
+            summaryCharLimit: z.number().int().positive().optional(),
+            timeoutMs: z.number().int().positive().optional(),
+            logSampleRate: z.number().min(0).max(1).optional(),
+          })
+          .strict()
+          .optional(),
       })
       .strict()
       .optional(),

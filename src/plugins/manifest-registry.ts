@@ -216,6 +216,24 @@ export function loadPluginManifestRegistry(params: {
         }
         continue;
       }
+
+      const existingRank = PLUGIN_ORIGIN_RANK[existing.candidate.origin];
+      const candidateRank = PLUGIN_ORIGIN_RANK[candidate.origin];
+      if (candidateRank < existingRank) {
+        records[existing.recordIndex] = buildRecord({
+          manifest,
+          candidate,
+          manifestPath: manifestRes.manifestPath,
+          schemaCacheKey,
+          configSchema,
+        });
+        seenIds.set(manifest.id, { candidate, recordIndex: existing.recordIndex });
+        continue;
+      }
+      if (candidateRank > existingRank) {
+        continue;
+      }
+
       diagnostics.push({
         level: "warn",
         pluginId: manifest.id,

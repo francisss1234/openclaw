@@ -1,0 +1,15 @@
+{
+  "name": "@openclaw/summary-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "start": "node --import tsx src/index.ts"
+  },
+  "dependencies": {
+    "openai": "^6.25.0",
+    "prom-client": "^15.1.1",
+    "redis": "^4.7.0"
+  }
+}

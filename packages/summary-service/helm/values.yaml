@@ -1,0 +1,17 @@
+image:
+  repository: openclaw/summary-service
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  port: 9921
+
+env:
+  SUMMARY_REDIS_URL: redis://redis:6379
+  SUMMARY_JOB_STREAM: openclaw:summary:jobs
+  SUMMARY_RESULT_STREAM: openclaw:summary:results
+  SUMMARY_CONSUMER_GROUP: openclaw-summary-jobs
+  SUMMARY_BASE_URL: https://api.z.ai/v1
+  SUMMARY_MODEL: glm-5-chat
+  SUMMARY_PORT: "9921"
+  SUMMARY_CLAIM_IDLE_MS: "60000"

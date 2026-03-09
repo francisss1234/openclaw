@@ -276,6 +276,25 @@ export type GatewayToolsConfig = {
   allow?: string[];
 };
 
+export type GatewaySummaryServiceInstanceConfig = {
+  baseUrl?: string;
+  apiKey?: string;
+  model?: string;
+  redisUrl?: string;
+  jobStream?: string;
+  resultStream?: string;
+  consumerGroup?: string;
+  consumerName?: string;
+  port?: number;
+  claimIdleMs?: number;
+};
+
+export type GatewaySummaryServiceConfig = GatewaySummaryServiceInstanceConfig & {
+  enabled?: boolean;
+  configPath?: string;
+  instances?: GatewaySummaryServiceInstanceConfig[];
+};
+
 export type GatewayConfig = {
   /** Single multiplexed port for Gateway WS + HTTP (default: 18789). */
   port?: number;
@@ -312,6 +331,7 @@ export type GatewayConfig = {
   trustedProxies?: string[];
   /** Tool access restrictions for HTTP /tools/invoke endpoint. */
   tools?: GatewayToolsConfig;
+  summaryService?: GatewaySummaryServiceConfig;
   /**
    * Channel health monitor interval in minutes.
    * Periodically checks channel health and restarts unhealthy channels.
